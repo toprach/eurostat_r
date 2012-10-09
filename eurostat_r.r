@@ -17,68 +17,92 @@ library(data.table)
 library(reshape2)
 library(zoo)
 
-read.eurostat=function(datasetname,LANGUAGE="en",save=FALSE){
-  baseurl="http://epp.eurostat.ec.europa.eu/NavTree_prod/everybody/BulkDownloadListing?sort=1&file=data%2F"
-  fullfilename=paste(datasetname,".tsv.gz",sep="")
-  temp <- paste(tempfile(),".gz",sep="")
-  download.file(paste(baseurl,fullfilename,sep=""),temp)
-  dataconnection <- gzfile(temp)
-  d=data.table(read.delim(dataconnection))
-  
-  #split the dimension column into its components
-  firstname=colnames(d)[1] # remove .time and count how many headings are there 
-  firstname=substr(firstname,1,nchar(firstname)-nchar(".time"))
-  headings=toupper(strsplit(firstname,".",fixed=TRUE)[[1]])
-  headingcount=length(headings)
-  setnames(d,colnames(d)[1],c("dimensions"))
-  headings_split = data.table(colsplit(d[,dimensions], pattern = "\\,",names=headings))
-  library(plyr)
-  for(x in headings) headings_split[[x]]=as.factor(headings_split[[x]])
-  
-  #join dimensions with data, convert to long format,split the value from the flag
-  mydata=cbind(headings_split,d[,colnames(d)[-1],with=FALSE])
-  longdata=data.table(melt(mydata,id=headings))
-  longdata$flag=as.factor(substr(longdata$value,nchar(longdata$value),nchar(longdata$value)))
-  longdata$value=as.double(substr(longdata$value,1,nchar(longdata$value)-1))
-
-  #download factors for each heading and add
-  for(heading in headings){
-    factorfile=paste("http://epp.eurostat.ec.europa.eu/NavTree_prod/everybody/BulkDownloadListing?sort=1&file=dic%2F",LANGUAGE,"%2F",tolower(heading),".dic",sep="")
+read.eurostat=function(datasetname,LANGUAGE="en",nicelabels=FALSE,cache=TRUE){
+  dsfname=paste(datasetname,".Rdata",sep="")
+  if(file.exists(dsfname) & cache==TRUE){
+    load(file=dsfname)
+  }else{
+    baseurl="http://epp.eurostat.ec.europa.eu/NavTree_prod/everybody/BulkDownloadListing?sort=1&file=data%2F"
+    fullfilename=paste(datasetname,".tsv.gz",sep="")
     temp <- paste(tempfile(),".gz",sep="")
-    download.file(factorfile,temp)
+    download.file(paste(baseurl,fullfilename,sep=""),temp)
     dataconnection <- gzfile(temp)
-    factordata=data.table(read.delim(dataconnection,header=FALSE))
-    setnames(factordata,colnames(factordata),c(heading,paste(heading,"_desc",sep="")))
-    #join the heading to the heading dataset
-    longdata=merge(longdata,factordata,by=heading,all.x=TRUE)
-  }
-#download the dimension names to use as better column names
-  dimfile=paste("http://epp.eurostat.ec.europa.eu/NavTree_prod/everybody/BulkDownloadListing?sort=1&file=dic%2F",LANGUAGE,"%2Fdimlst.dic",sep="")
-  temp <- paste(tempfile(),".gz",sep="")
-  download.file(dimfile,temp)
-  dataconnection <- gzfile(temp)
-  dimdata=read.delim(dataconnection,header=FALSE)
-  colnames(dimdata)=c("colname","desc")
-  lab=dimdata$desc
-  names(lab)=dimdata$colname
-  speakingheadings=as.character(lab[headings])
-  setnames(longdata,headings,speakingheadings) 
-#fix time column:
-  setnames(longdata,"variable","time")
-  longdata$time=substring(longdata$time,2)
-  mytime=longdata$time[1]                       
-  if(nchar(mytime)==6 & substring(mytime,5,5)=="Q"){ #if it is QUARTERLY DATA
-    myyear=as.numeric(substring(longdata$time,1,4))
-    quarter=as.numeric(substring(longdata$time,6,6))
-    longdata$time=yearqtr(myyear+(quarter-1)/4)
-  }else if(nchar(mytime)==7 & substring(mytime,5,5)=="M"){ #if it is monthly DATA
-    myyear=as.numeric(substring(longdata$time,1,4))
-    month=as.numeric(substring(longdata$time,6,7))
-    longdata$time=yearmon(myyear+(month-1)/12)
-  }else if(nchar(mytime)==4){ #yearly data}
-    longdata$time=as.integer(longdata$time)
-  }
+    d=data.table(read.delim(dataconnection))
+    
+    #split the dimension column into its components
+    firstname=colnames(d)[1] # remove .time and count how many headings are there 
+    firstname=substr(firstname,1,nchar(firstname)-nchar(".time"))
+    headings=toupper(strsplit(firstname,".",fixed=TRUE)[[1]])
+    headingcount=length(headings)
+    setnames(d,colnames(d)[1],c("dimensions"))
+    headings_split = data.table(colsplit(d[,dimensions], pattern = "\\,",names=headings))
+    library(plyr)
+    for(x in headings) headings_split[[x]]=as.factor(headings_split[[x]])
+    
+    #join dimensions with data, convert to long format,split the value from the flag
+    mydata=cbind(headings_split,d[,colnames(d)[-1],with=FALSE])
+    longdata=data.table(melt(mydata,id=headings))
+    longdata$flag=as.factor(substr(longdata$value,nchar(longdata$value),nchar(longdata$value)))
+    longdata$value=as.double(substr(longdata$value,1,nchar(longdata$value)-1))
   
-  longdata
+    #download factors for each heading and add
+    for(heading in headings){
+      fname=paste("dic/",heading,".Rdata",sep="")
+      if(file.exists(fname)){
+        load(file=fname)
+      }else{
+        factorfile=paste("http://epp.eurostat.ec.europa.eu/NavTree_prod/everybody/BulkDownloadListing?sort=1&file=dic%2F",LANGUAGE,"%2F",tolower(heading),".dic",sep="")
+        temp <- paste(tempfile(),".gz",sep="")
+        download.file(factorfile,temp)
+        dataconnection <- gzfile(temp)
+        factordata=data.table(read.delim(dataconnection,header=FALSE))
+        setnames(factordata,colnames(factordata),c(heading,paste(heading,"_desc",sep="")))
+        dir.create("dic")
+        save(factordata,file=fname)
+      }
+      #join the heading to the heading dataset
+      longdata=merge(longdata,factordata,by=heading,all.x=TRUE)
+    }
+  #download the dimension names to use as better column names
+    
+    if(nicelabels){
+      fname="dic/dimlst.dic.Rdata"
+      if(file.exists(fname)){
+        load(file=fname)
+      }else{
+        dimfile=paste("http://epp.eurostat.ec.europa.eu/NavTree_prod/everybody/BulkDownloadListing?sort=1&file=dic%2F",LANGUAGE,"%2Fdimlst.dic",sep="")
+        temp <- paste(tempfile(),".gz",sep="")
+        download.file(dimfile,temp)
+        dataconnection <- gzfile(temp)
+        dimdata=read.delim(dataconnection,header=FALSE)
+        colnames(dimdata)=c("colname","desc")
+        lab=dimdata$desc
+        names(lab)=dimdata$colname
+        dir.create("dic")
+        save(lab,file=fname)
+      }
+        speakingheadings=as.character(lab[headings])
+        setnames(longdata,headings,speakingheadings) 
+    }
+  #fix time column:
+    setnames(longdata,"variable","time")
+    longdata$time=substring(longdata$time,2)
+    mytime=longdata$time[1]                       
+    if(nchar(mytime)==6 & substring(mytime,5,5)=="Q"){ #if it is QUARTERLY DATA
+      myyear=as.numeric(substring(longdata$time,1,4))
+      quarter=as.numeric(substring(longdata$time,6,6))
+      longdata$time=yearqtr(myyear+(quarter-1)/4)
+    }else if(nchar(mytime)==7 & substring(mytime,5,5)=="M"){ #if it is monthly DATA
+      myyear=as.numeric(substring(longdata$time,1,4))
+      month=as.numeric(substring(longdata$time,6,7))
+      longdata$time=yearmon(myyear+(month-1)/12)
+    }else if(nchar(mytime)==4){ #yearly data}
+      longdata$time=as.integer(longdata$time)
+    }
+    eurostatdata=longdata
+    save(eurostatdata,file=dsfname)
+    eurostatdata
+  }
+  eurostatdata
 }
  
