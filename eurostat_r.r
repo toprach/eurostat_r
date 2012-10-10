@@ -8,7 +8,8 @@
 # dimensions are correctly labeled as factors
 # the time dimension is automatically detected as yearly, monthly or quarterly and converted to a
 # respective zoo object
-
+#nice labels for the columsn are included as an attribute "nicelabels" and can be used as nicelabel[columnname]
+#an index is set on the dimensions+time - so that merge with another eurostat table works on euqually named columns
 #possible extensions
 #load dimensions into a local cache to speed up the labeling
 #add map feature to include a map of countries / or NUTS2-3 Regions where applicable with maptools
@@ -17,7 +18,7 @@ library(data.table)
 library(reshape2)
 library(zoo)
 
-read.eurostat=function(datasetname,LANGUAGE="en",nicelabels=FALSE,cache=TRUE){
+read.eurostat=function(datasetname,LANGUAGE="en",cache=TRUE){
   dsfname=paste(datasetname,".Rdata",sep="")
   if(file.exists(dsfname) & cache==TRUE){
     load(file=dsfname)
@@ -41,7 +42,7 @@ read.eurostat=function(datasetname,LANGUAGE="en",nicelabels=FALSE,cache=TRUE){
     
     #join dimensions with data, convert to long format,split the value from the flag
     mydata=cbind(headings_split,d[,colnames(d)[-1],with=FALSE])
-    longdata=data.table(melt(mydata,id=headings))
+    longdata=data.table(melt(as.data.frame(mydata),id=headings))
     longdata$flag=as.factor(substr(longdata$value,nchar(longdata$value),nchar(longdata$value)))
     longdata$value=as.double(substr(longdata$value,1,nchar(longdata$value)-1))
   
@@ -65,7 +66,7 @@ read.eurostat=function(datasetname,LANGUAGE="en",nicelabels=FALSE,cache=TRUE){
     }
   #download the dimension names to use as better column names
     
-    if(nicelabels){
+      # add the nicelabels as an attribute to the datatable
       fname="dic/dimlst.dic.Rdata"
       if(file.exists(fname)){
         load(file=fname)
@@ -81,9 +82,9 @@ read.eurostat=function(datasetname,LANGUAGE="en",nicelabels=FALSE,cache=TRUE){
         dir.create("dic")
         save(lab,file=fname)
       }
-        speakingheadings=as.character(lab[headings])
-        setnames(longdata,headings,speakingheadings) 
-    }
+        setattr(longdata,"nicelabels",lab[headings])
+   
+    
   #fix time column:
     setnames(longdata,"variable","time")
     longdata$time=substring(longdata$time,2)
@@ -101,8 +102,11 @@ read.eurostat=function(datasetname,LANGUAGE="en",nicelabels=FALSE,cache=TRUE){
     }
     eurostatdata=longdata
     save(eurostatdata,file=dsfname)
+    setkeyv(longdata,c(headings,"time"))
     eurostatdata
   }
+  
+  
   eurostatdata
 }
  
