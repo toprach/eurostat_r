@@ -17,6 +17,7 @@
 library(data.table)
 library(reshape2)
 library(zoo)
+library(plyr)
 
 read.eurostat=function(datasetname,LANGUAGE="en",cache=TRUE){
   dsfname=paste(datasetname,".Rdata",sep="")
@@ -37,7 +38,6 @@ read.eurostat=function(datasetname,LANGUAGE="en",cache=TRUE){
     headingcount=length(headings)
     setnames(d,colnames(d)[1],c("dimensions"))
     headings_split = data.table(colsplit(d[,dimensions], pattern = "\\,",names=headings))
-    library(plyr)
     for(x in headings) headings_split[[x]]=as.factor(headings_split[[x]])
     
     #join dimensions with data, convert to long format,split the value from the flag
